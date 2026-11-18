@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Puzzle 71 Solver</title>
+<style>
+:root{--bg:#0b0d12;--card:#151922;--line:#232938;--tx:#e8eaf0;--mu:#8b93a7;--ac:#4f8cff;--ok:#22c55e;--bad:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);line-height:1.5}
+header{position:sticky;top:0;background:#0b0d12ee;backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:5}
+.wrap{max-width:900px;margin:0 auto;padding:0 16px}
+nav{display:flex;justify-content:space-between;align-items:center;height:54px}
+nav b{font-size:17px}nav a{color:var(--mu);text-decoration:none;margin-left:16px;font-size:14px}
+.hero{padding:36px 0 14px}.hero h1{font-size:30px;margin:0 0 8px}.hero p{color:var(--mu);margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:18px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.lbl{font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.06em}
+.val{font-size:20px;font-family:ui-monospace,monospace;margin-top:4px;word-break:break-all}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button,input{font-size:16px;border-radius:8px;border:0;padding:11px 16px}
+button{background:var(--ac);color:#fff;cursor:pointer}button.s{background:var(--bad)}button.t{background:#2b3244}
+input{width:76px;background:#232938;color:#fff}
+canvas{width:100%;height:46px;background:#0f1218;border-radius:8px;display:block;margin-top:8px}
+.st{display:inline-block;width:9px;height:9px;border-radius:50%;background:#555;margin-right:6px}.st.on{background:var(--ok);animation:p 1s infinite}
+@keyframes p{50%{opacity:.3}}
+#log{color:var(--mu);font-size:13px;white-space:pre-wrap;margin-top:10px}
+section{margin:30px 0}section h2{font-size:20px}section p,li{color:var(--mu)}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0}
+summary{cursor:pointer}
+footer{border-top:1px solid var(--line);color:var(--mu);font-size:13px;padding:20px 0 40px;margin-top:30px}
+#ov{display:none;position:fixed;inset:0;background:#000d;z-index:20;overflow:auto;padding:16px}
+#ov .box{max-width:680px;margin:30px auto;background:var(--card);border:2px solid var(--ok);border-radius:14px;padding:20px}
+.fld{margin:12px 0}.fld .v{font-family:ui-monospace,monospace;background:#0f1218;border-radius:8px;padding:10px;word-break:break-all;font-size:14px;margin:4px 0}
+.fld button{padding:6px 12px;font-size:13px}
+.badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:13px}
+.badge.ok{background:#14532d;color:#86efac}.badge.bad{background:#7f1d1d;color:#fca5a5}
+.warn{background:#3b2a05;color:#fcd34d;border-radius:8px;padding:10px;font-size:14px}
+</style></head><body>
+<header><div class="wrap"><nav><b>&#128273; Puzzle 71 Solver</b>
+<div><a href="#run">Solver</a><a href="#how">How it works</a><a href="#faq">FAQ</a></div></nav></div></header>
+
+<div class="wrap">
+<div class="hero"><h1>Bitcoin Puzzle #71 Solver</h1>
+<p>Runs entirely in your browser. Nothing is uploaded; keys never leave your device.</p></div>
+
+<div class="grid">
+ <div class="card"><div class="lbl">Target address</div><div class="val" style="font-size:13px">1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU</div></div>
+ <div class="card"><div class="lbl">Key range</div><div class="val" style="font-size:13px">0x400000000000000000<br>to 0x7FFFFFFFFFFFFFFFFF</div></div>
+ <div class="card"><div class="lbl">Reward</div><div class="val">7.1 BTC</div></div>
+</div>
+
+<div class="card" id="run">
+ <div class="row">
+  <span><span class="st" id="dot"></span><span id="state">Idle</span></span>
+  <span style="margin-left:auto">Threads <input id="th" type="number" min="1" max="64"></span>
+  <button id="go">Start</button><button id="stop" class="s">Stop</button><button id="test" class="t">Self-test</button>
+ </div>
+ <div class="grid">
+  <div><div class="lbl">Keys tested</div><div class="val" id="n">0</div></div>
+  <div><div class="lbl">Speed</div><div class="val" id="r">0 keys/s</div></div>
+  <div><div class="lbl">Elapsed</div><div class="val" id="e">0s</div></div>
+  <div><div class="lbl">Range covered</div><div class="val" id="pc">0%</div></div>
+ </div>
+ <div class="lbl">Estimated time to scan half the range at this speed</div>
+ <div class="val" id="eta">&ndash;</div>
+ <div class="lbl" style="margin-top:14px">Sampling map (each dot = a random chunk searched)</div>
+ <canvas id="map" width="860" height="46"></canvas>
+ <div id="log">Ready.</div>
+</div>
+
+<section id="how"><h2>How it works</h2>
+<ul>
+<li>Each thread picks a random start inside the puzzle range and scans consecutive private keys.</li>
+<li>For every key it computes the public key (secp256k1), then SHA-256 and RIPEMD-160, and compares the result to the target hash160.</li>
+<li>If it matches, the solver stops and shows the key, WIF, public key and address.</li>
+</ul></section>
+
+<section id="faq"><h2>FAQ</h2>
+<details><summary>Can this actually find the key?</summary><p>The range has about 1.2 &times; 10&sup2;&sup1; keys. A browser does thousands to tens of thousands per second per thread, so realistically no. The ETA above shows your own measured number.</p></details>
+<details><summary>What happens if a key is found?</summary><p>A result panel opens with the private key, WIF, public key and address, plus a verification badge.</p></details>
+<details><summary>Is my data sent anywhere?</summary><p>No. All computation runs locally in Web Workers.</p></details>
+</section>
+<footer>Educational tool. Always run the Self-test first.</footer>
+</div>
+
+<div id="ov"><div class="box">
+ <h2 style="margin-top:0">&#127881; Key found</h2>
+ <div id="vb"></div>
+ <div class="fld"><div class="lbl">Private key (hex)</div><div class="v" id="f1"></div><button data-c="f1">Copy</button></div>
+ <div class="fld"><div class="lbl">WIF (compressed)</div><div class="v" id="f2"></div><button data-c="f2">Copy</button></div>
+ <div class="fld"><div class="lbl">Public key (compressed)</div><div class="v" id="f3"></div><button data-c="f3">Copy</button></div>
+ <div class="fld"><div class="lbl">Address</div><div class="v" id="f4"></div><button data-c="f4">Copy</button></div>
+ <div class="warn">Copy and back up the key now. Spending reveals the public key, so others can race you; send the transaction promptly with a high fee. Never share the key.</div>
+ <p><button id="close" class="t">Close</button></p>
+</div></div>
+
+<script type="text/plain" id="w">
+const P=2n**256n-2n**32n-977n;
+const Gx=0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n;
+const Gy=0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
+const LO=1n<<70n, SPAN=(1n<<70n)-(1n<<22n);
+const mod=a=>{a%=P;return a<0n?a+P:a};
+function inv(a){let lm=1n,hm=0n,low=mod(a),high=P;
+ while(low>1n){const r=high/low;[lm,hm]=[hm-lm*r,lm];[low,high]=[high-low*r,low];}
+ return mod(lm);}
+function add(a,b){if(!a)return b;if(!b)return a;let l;
+ if(a[0]===b[0]){if(a[1]!==b[1])return null;l=mod(3n*a[0]*a[0]*inv(2n*a[1]));}
+ else l=mod((b[1]-a[1])*inv(b[0]-a[0]));
+ const x=mod(l*l-a[0]-b[0]);return [x,mod(l*(a[0]-x)-a[1])];}
+function mul(k,pt){let r=null,q=pt;while(k>0n){if(k&1n)r=add(r,q);q=add(q,q);k>>=1n;}return r;}
+const KS=new Uint32Array(64),HS=new Uint32Array(8);
+(function(){let n=0,c=2;while(n<64){let ok=true;for(let d=2;d*d<=c;d++)if(c%d===0){ok=false;break}
+ if(ok){if(n<8)HS[n]=Math.floor((Math.sqrt(c)%1)*4294967296);KS[n]=Math.floor((Math.cbrt(c)%1)*4294967296);n++}c++}})();
+const W=new Uint32Array(64),M=new Uint32Array(16),H=new Int32Array(8);
+const rr=(x,n)=>(x>>>n)|(x<<(32-n));
+function sha(){
+ for(let i=0;i<16;i++)W[i]=M[i];
+ for(let i=16;i<64;i++){const a=W[i-15],b=W[i-2];
+  W[i]=(W[i-16]+(rr(a,7)^rr(a,18)^(a>>>3))+W[i-7]+(rr(b,17)^rr(b,19)^(b>>>10)))|0;}
+ let a=HS[0],b=HS[1],c=HS[2],d=HS[3],e=HS[4],f=HS[5],g=HS[6],h=HS[7];
+ for(let i=0;i<64;i++){
+  const t1=(h+(rr(e,6)^rr(e,11)^rr(e,25))+((e&f)^(~e&g))+KS[i]+W[i])|0;
+  const t2=((rr(a,2)^rr(a,13)^rr(a,22))+((a&b)^(a&c)^(b&c)))|0;
+  h=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;}
+ H[0]=HS[0]+a;H[1]=HS[1]+b;H[2]=HS[2]+c;H[3]=HS[3]+d;H[4]=HS[4]+e;H[5]=HS[5]+f;H[6]=HS[6]+g;H[7]=HS[7]+h;}
+const R1=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,7,4,13,1,10,6,15,3,12,0,9,5,2,14,11,8,3,10,14,4,9,15,8,1,2,7,0,6,13,11,5,12,1,9,11,10,0,8,12,4,13,3,7,15,14,5,6,2,4,0,5,9,7,12,2,10,14,1,3,8,11,6,15,13];
+const R2=[5,14,7,0,9,2,11,4,13,6,15,8,1,10,3,12,6,11,3,7,0,13,5,10,14,15,8,12,4,9,1,2,15,5,1,3,7,14,6,9,11,8,12,2,10,0,4,13,8,6,4,1,3,11,15,0,5,12,2,13,9,7,10,14,12,15,10,4,1,5,8,7,6,2,13,14,0,3,9,11];
+const S1=[11,14,15,12,5,8,7,9,11,13,14,15,6,7,9,8,7,6,8,13,11,9,7,15,7,12,15,9,11,7,13,12,11,13,6,7,14,9,13,15,14,8,13,6,5,12,7,5,11,12,14,15,14,15,9,8,9,14,5,6,8,6,5,12,9,15,5,11,6,8,13,12,5,12,13,14,11,8,5,6];
+const S2=[8,9,9,11,13,15,15,5,7,7,8,11,14,14,12,6,9,13,15,7,12,8,9,11,7,7,12,7,6,15,13,11,9,7,15,11,8,6,6,14,12,13,5,14,13,13,7,5,15,5,8,11,14,14,6,14,6,9,12,9,12,5,15,8,8,5,12,9,12,5,14,6,8,13,6,5,15,13,11,11];
+const K1=[0,0x5A827999,0x6ED9EBA1,0x8F1BBCDC,0xA953FD4E],K2=[0x50A28BE6,0x5C4DD124,0x6D703EF3,0x7A6D76E9,0];
+const rol=(x,n)=>(x<<n)|(x>>>(32-n));
+const F=(r,x,y,z)=>r===0?x^y^z:r===1?(x&y)|(~x&z):r===2?(x|~y)^z:r===3?(x&z)|(y&~z):x^(y|~z);
+const X=new Int32Array(16),OUT=new Int32Array(5);
+const bs=h=>((h&255)<<24)|((h&0xff00)<<8)|((h>>>8)&0xff00)|(h>>>24);
+function rmd(){
+ const i0=0x67452301|0,i1=0xEFCDAB89|0,i2=0x98BADCFE|0,i3=0x10325476|0,i4=0xC3D2E1F0|0;
+ let a1=i0,b1=i1,c1=i2,d1=i3,e1=i4,a2=i0,b2=i1,c2=i2,d2=i3,e2=i4;
+ for(let j=0;j<80;j++){const r=j>>4;
+  let t=(a1+F(r,b1,c1,d1)+X[R1[j]]+K1[r])|0;t=(rol(t,S1[j])+e1)|0;a1=e1;e1=d1;d1=rol(c1,10);c1=b1;b1=t;
+  t=(a2+F(4-r,b2,c2,d2)+X[R2[j]]+K2[r])|0;t=(rol(t,S2[j])+e2)|0;a2=e2;e2=d2;d2=rol(c2,10);c2=b2;b2=t;}
+ OUT[0]=(i1+c1+d2)|0;OUT[1]=(i2+d1+e2)|0;OUT[2]=(i3+e1+a2)|0;OUT[3]=(i4+a1+b2)|0;OUT[4]=(i0+b1+c2)|0;}
+const xw=new Uint32Array(8);
+function hash160(x,odd){
+ for(let i=0;i<8;i++)xw[i]=Number((x>>BigInt(32*(7-i)))&0xffffffffn);
+ M[0]=((odd?3:2)<<24)|(xw[0]>>>8);
+ for(let i=1;i<8;i++)M[i]=((xw[i-1]&255)<<24)|(xw[i]>>>8);
+ M[8]=((xw[7]&255)<<24)|(0x80<<16);
+ for(let i=9;i<15;i++)M[i]=0;M[15]=264;
+ sha();
+ for(let i=0;i<8;i++)X[i]=bs(H[i]);
+ X[8]=0x80;for(let i=9;i<14;i++)X[i]=0;X[14]=256;X[15]=0;
+ rmd();}
+const hex=()=>Array.from(OUT).map(w=>[0,8,16,24].map(s=>((w>>>s)&255).toString(16).padStart(2,'0')).join('')).join('');
+const TG=new Int32Array(5);
+function setTarget(h){for(let i=0;i<5;i++){const b=[0,1,2,3].map(j=>parseInt(h.substr(i*8+j*2,2),16));TG[i]=b[0]|(b[1]<<8)|(b[2]<<16)|(b[3]<<24);}}
+const hit=(x,odd)=>{hash160(x,odd);return OUT[0]===TG[0]&&OUT[1]===TG[1]&&OUT[2]===TG[2]&&OUT[3]===TG[3]&&OUT[4]===TG[4];};
+const B=512,T=[null,[Gx,Gy]];
+for(let i=2;i<=B;i++)T[i]=add(T[i-1],T[1]);
+const den=new Array(B),pre=new Array(B);
+let base,k,found=null;
+function batch(){
+ const x0=base[0],y0=base[1];
+ if(hit(x0,(y0&1n)===1n)){found=k;return;}
+ pre[0]=1n;
+ for(let i=1;i<B;i++){den[i]=mod(T[i][0]-x0);pre[i]=(pre[i-1]*den[i])%P;}
+ let ia=inv(pre[B-1]);
+ for(let i=B-1;i>=1;i--){
+  const id=(ia*pre[i-1])%P;ia=(ia*den[i])%P;
+  const l=mod((T[i][1]-y0)*id),x3=mod(l*l-x0-T[i][0]);
+  const y3=mod(l*(x0-x3)-y0);
+  if(hit(x3,(y3&1n)===1n)){found=k+BigInt(i);return;}}
+ base=add(base,T[B]);k+=BigInt(B);}
+function newBase(){
+ const r=crypto.getRandomValues(new Uint32Array(3));
+ const v=((BigInt(r[0])<<64n)|(BigInt(r[1])<<32n)|BigInt(r[2]))%SPAN;
+ k=LO+v;base=mul(k,[Gx,Gy]);}
+let stopped=true,batches=0;
+function step(){
+ if(stopped)return;
+ const t0=Date.now();let n=0;
+ while(Date.now()-t0<150&&found===null){
+  if(batches>=2048){newBase();batches=0;}
+  batch();batches++;n+=B;}
+ postMessage({n,sample:k.toString(16)});
+ if(found!==null){
+  const pt=mul(found,[Gx,Gy]);const odd=(pt[1]&1n)===1n;hash160(pt[0],odd);
+  postMessage({found:found.toString(16),h160:hex(),pub:(odd?'03':'02')+pt[0].toString(16).padStart(64,'0')});
+  stopped=true;return;}
+ setTimeout(step,0);}
+onmessage=e=>{const d=e.data;
+ if(d.cmd==='start'){setTarget(d.target);found=null;stopped=false;batches=0;newBase();step();}
+ else if(d.cmd==='stop'){stopped=true;}
+ else if(d.cmd==='test'){
+  hash160(Gx,false);const vec=hex();
+  const ok1=vec==='751e76e8199196d454941c45d1b3a323f1433bd6';
+  const K=(1n<<20n)+BigInt(Math.floor(Math.random()*1e6));
+  const pt=mul(K,[Gx,Gy]);hash160(pt[0],(pt[1]&1n)===1n);
+  setTarget(hex());found=null;k=K-1500n;base=mul(k,[Gx,Gy]);
+  for(let i=0;i<4&&found===null;i++)batch();
+  postMessage({test:true,ok1,vec,ok2:found===K});found=null;}
+};
+</script>
+
+<script>
+const TARGET='f6f5431d25bbf7b12e8add9af5e3475c44a0a5b8';
+const $=id=>document.getElementById(id);
+const url=URL.createObjectURL(new Blob([$('w').textContent],{type:'text/javascript'}));
+let ws=[],total=0,t0=0,tick=null,lastTotal=0,lastT=0,rate=0,dots=[];
+$('th').value=Math.max(1,(navigator.hardwareConcurrency||4)-1);
+const log=s=>$('log').textContent=s;
+const fmt=n=>n.toLocaleString('en-US');
+const RANGE=1n<<70n;
+
+function drawMap(){
+ const c=$('map'),x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);
+ x.fillStyle='#4f8cff';
+ dots.forEach(f=>x.fillRect(f*(c.width-2),8,2,30));}
+
+function setRun(on){$('dot').className='st'+(on?' on':'');$('state').textContent=on?'Running':'Idle';}
+function stopAll(){ws.forEach(w=>{w.postMessage({cmd:'stop'});w.terminate()});ws=[];clearInterval(tick);setRun(false);}
+
+const A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+async function sha256(b){return new Uint8Array(await crypto.subtle.digest('SHA-256',b));}
+async function b58check(p){
+ const c=(await sha256(await sha256(p))).slice(0,4);
+ const d=new Uint8Array([...p,...c]);let n=0n;for(const b of d)n=n*256n+BigInt(b);
+ let s='';while(n>0n){s=A[Number(n%58n)]+s;n/=58n;}
+ for(const b of d){if(b===0)s='1'+s;else break;}return s;}
+const hb=h=>Uint8Array.from(h.match(/../g).map(x=>parseInt(x,16)));
+
+async function showFound(d){
+ const key=d.found.padStart(64,'0');
+ $('f1').textContent=key;$('f3').textContent=d.pub;
+ const ok=d.h160===TARGET;
+ let wif='(unavailable here: needs a secure context)',addr='';
+ try{wif=await b58check(new Uint8Array([0x80,...hb(key),0x01]));addr=await b58check(new Uint8Array([0x00,...hb(d.h160)]));}catch(e){}
+ $('f2').textContent=wif;$('f4').textContent=addr||'hash160: '+d.h160;
+ $('vb').innerHTML=ok?'<span class="badge ok">Verified: matches puzzle 71 target</span>':'<span class="badge bad">Does NOT match the target. Do not trust this result.</span>';
+ $('ov').style.display='block';document.title='KEY FOUND!';
+ try{const a=new (window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator();o.connect(a.destination);o.start();setTimeout(()=>o.stop(),600);}catch(e){}
+ setTimeout(()=>alert('Key found! See the result panel.'),100);}
+
+$('go').onclick=()=>{
+ stopAll();total=0;lastTotal=0;rate=0;dots=[];drawMap();t0=lastT=Date.now();
+ const n=Math.min(64,Math.max(1,+$('th').value||1));
+ for(let i=0;i<n;i++){
+  const w=new Worker(url);
+  w.onmessage=e=>{const d=e.data;
+   if(d.n)total+=d.n;
+   if(d.sample){const f=Number(((BigInt('0x'+d.sample)-RANGE)*10000n)/RANGE)/10000;
+    if(Math.random()<0.02){dots.push(f);if(dots.length>400)dots.shift();drawMap();}}
+   if(d.found){stopAll();showFound(d);log('Finished: key found.');}};
+  w.postMessage({cmd:'start',target:TARGET});ws.push(w);}
+ setRun(true);log('Running on '+n+' thread(s)...');
+ tick=setInterval(()=>{
+  const now=Date.now(),inst=(total-lastTotal)/((now-lastT)/1000);
+  rate=rate?rate*0.7+inst*0.3:inst;lastTotal=total;lastT=now;
+  $('n').textContent=fmt(total);$('r').textContent=fmt(Math.round(rate))+' keys/s';
+  $('e').textContent=Math.round((now-t0)/1000)+'s';
+  $('pc').textContent=(total/2**70*100).toExponential(2)+'%';
+  if(rate>0)$('eta').textContent=((2**69/rate)/31557600).toExponential(2)+' years';
+ },1000);};
+$('stop').onclick=()=>{stopAll();log('Stopped.');};
+$('close').onclick=()=>{$('ov').style.display='none';document.title='Puzzle 71 Solver';};
+document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{
+ navigator.clipboard.writeText($(b.dataset.c).textContent);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1200);});
+$('test').onclick=()=>{
+ log('Running self-test...');const w=new Worker(url);
+ w.onmessage=e=>{const d=e.data;if(d.test){
+  log('Hash160 of key 1: '+(d.ok1?'PASS':'FAIL')+'\nScan test (finds a known key): '+(d.ok2?'PASS':'FAIL'));w.terminate();}};
+ w.postMessage({cmd:'test'});};
+</script>
+</body></html>
